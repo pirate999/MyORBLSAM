@@ -72,6 +72,7 @@ public:
     void ChangeCalibration(const string &strSettingPath);
 
     // Use this function if you have deactivated local mapping and you only want to localize the camera.
+    /**只根据已有的地图进行定位，不进行LocalMapping */
     void InformOnlyTracking(const bool &flag);
 
 

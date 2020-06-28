@@ -239,8 +239,9 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
 int Optimizer::PoseOptimization(Frame *pFrame)
 {
     g2o::SparseOptimizer optimizer;
-    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
 
+    ///6:6 freedom, 3: 3D point
+    g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
     linearSolver = new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();
 
     g2o::BlockSolver_6_3 * solver_ptr = new g2o::BlockSolver_6_3(linearSolver);
@@ -277,6 +278,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
     {
     unique_lock<mutex> lock(MapPoint::mGlobalMutex);
 
+    ///遍历所有特征点,添加Edge
     for(int i=0; i<N; i++)
     {
         MapPoint* pMP = pFrame->mvpMapPoints[i];
@@ -366,6 +368,9 @@ int Optimizer::PoseOptimization(Frame *pFrame)
 
     // We perform 4 optimizations, after each optimization we classify observation as inlier/outlier
     // At the next optimization, outliers are not included, but at the end they can be classified as inliers again.
+    ///执行四次优化,每次最多迭代10次,每次优化之后,我们将观测的特征点分为inlier和outlier,在下一次优化的时候,outlier不参加,
+    ///但是最后可以再次被分类为inlier
+    ///一般取 [公式] 为95%，一个内点只有5%的可能被错误的认为是外点
     const float chi2Mono[4]={5.991,5.991,5.991,5.991};
     const float chi2Stereo[4]={7.815,7.815,7.815, 7.815};
     const int its[4]={10,10,10,10};    
@@ -379,6 +384,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
         optimizer.optimize(its[it]);
 
         nBad=0;
+        ///遍历优化后的Edge
         for(size_t i=0, iend=vpEdgesMono.size(); i<iend; i++)
         {
             g2o::EdgeSE3ProjectXYZOnlyPose* e = vpEdgesMono[i];
@@ -390,8 +396,10 @@ int Optimizer::PoseOptimization(Frame *pFrame)
                 e->computeError();
             }
 
+            ///得到卡方分布的的值
             const float chi2 = e->chi2();
 
+            ///误差比较大,设置为outlier
             if(chi2>chi2Mono[it])
             {                
                 pFrame->mvbOutlier[idx]=true;

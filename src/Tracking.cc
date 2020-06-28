@@ -43,6 +43,10 @@ using namespace std;
 namespace ORB_SLAM2
 {
 
+/**
+ * 1.加载相机的参数；
+ * 2.创建ORBextractor
+ */
 Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Map *pMap, KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor):
     mState(NO_IMAGES_YET), mSensor(sensor), mbOnlyTracking(false), mbVO(false), mpORBVocabulary(pVoc),
     mpKeyFrameDB(pKFDB), mpInitializer(static_cast<Initializer*>(NULL)), mpSystem(pSys), mpViewer(NULL),
@@ -234,7 +238,11 @@ cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const d
     return mCurrentFrame.mTcw.clone();
 }
 
-
+/**
+ * 1.转换图像为单通道的灰度图;
+ * 2.生成Frame类对象;
+ * 3.调用Track函数进行特征点跟踪
+ */
 cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp)
 {
     mImGray = im;
@@ -264,6 +272,16 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp)
     return mCurrentFrame.mTcw.clone();
 }
 
+
+/**
+ * 进行帧跟踪
+ * 几种跟踪模式:
+ * 1.TrackWithMotionModel
+ * 2.TrackReferenceKeyFrame
+ * 3.TrackLocalMap
+ * 4.Relocalization
+ * 
+ */
 void Tracking::Track()
 {
     if(mState==NO_IMAGES_YET)
@@ -276,6 +294,7 @@ void Tracking::Track()
     // Get Map Mutex -> Map cannot be changed
     unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
+    ///初始化SLAM系统,单目初始化需要用到前面两帧
     if(mState==NOT_INITIALIZED)
     {
         if(mSensor==System::STEREO || mSensor==System::RGBD)
@@ -288,27 +307,29 @@ void Tracking::Track()
         if(mState!=OK)
             return;
     }
-    else
+    else ///初始化完成
     {
         // System is initialized. Track Frame.
         bool bOK;
 
         // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
+        ///非只跟踪模式,用匀速运动模型或者重定位模式(跟踪丢失)
         if(!mbOnlyTracking)
         {
             // Local Mapping is activated. This is the normal behaviour, unless
             // you explicitly activate the "only tracking" mode.
-
+            ///局部建图激活,这是正常情况,除非使用仅跟踪模式
             if(mState==OK)
             {
                 // Local Mapping might have changed some MapPoints tracked in last frame
                 CheckReplacedInLastFrame();
 
+                ///如果是静止的,或者当前帧的离上一次的重定位帧id小于2,就跟踪参考帧
                 if(mVelocity.empty() || mCurrentFrame.mnId<mnLastRelocFrameId+2)
                 {
                     bOK = TrackReferenceKeyFrame();
                 }
-                else
+                else///跟踪运动模型
                 {
                     bOK = TrackWithMotionModel();
                     if(!bOK)
@@ -320,7 +341,7 @@ void Tracking::Track()
                 bOK = Relocalization();
             }
         }
-        else
+        else ///只跟踪模式
         {
             // Localization Mode: Local Mapping is deactivated
 
@@ -486,15 +507,17 @@ void Tracking::Track()
     }
 
     // Store frame pose information to retrieve the complete camera trajectory afterwards.
+    ///如果当前帧的相机Pose不为空,储存所有的Frame的位置信息,用来恢复整个相机的运动轨迹
     if(!mCurrentFrame.mTcw.empty())
     {
+        ///Tcr = Tcw * (Trw)^-1
         cv::Mat Tcr = mCurrentFrame.mTcw*mCurrentFrame.mpReferenceKF->GetPoseInverse();
-        mlRelativeFramePoses.push_back(Tcr);
-        mlpReferences.push_back(mpReferenceKF);
-        mlFrameTimes.push_back(mCurrentFrame.mTimeStamp);
+        mlRelativeFramePoses.push_back(Tcr);//记录当前帧相对于参考帧的位姿
+        mlpReferences.push_back(mpReferenceKF);///记录当前帧的参考关键帧
+        mlFrameTimes.push_back(mCurrentFrame.mTimeStamp);//记录当前帧的时间戳
         mlbLost.push_back(mState==LOST);
     }
-    else
+    else///如果当前帧的相机Pose为空,即不能定位得到当前帧的相机Pose
     {
         // This can happen if tracking is lost
         mlRelativeFramePoses.push_back(mlRelativeFramePoses.back());
@@ -754,17 +777,21 @@ void Tracking::CreateInitialMapMonocular()
     mState=OK;
 }
 
+///更新上一帧中被替换的地图点
 void Tracking::CheckReplacedInLastFrame()
 {
     for(int i =0; i<mLastFrame.N; i++)
     {
+        ///上一帧的地图点
         MapPoint* pMP = mLastFrame.mvpMapPoints[i];
 
         if(pMP)
         {
+            ///地图点的新的替换点
             MapPoint* pRep = pMP->GetReplaced();
             if(pRep)
             {
+                ///指针指向新的替换点
                 mLastFrame.mvpMapPoints[i] = pRep;
             }
         }
@@ -775,10 +802,12 @@ void Tracking::CheckReplacedInLastFrame()
 bool Tracking::TrackReferenceKeyFrame()
 {
     // Compute Bag of Words vector
+    ///1.计算当前帧的BOw
     mCurrentFrame.ComputeBoW();
 
     // We perform first an ORB matching with the reference keyframe
     // If enough matches are found we setup a PnP solver
+    ///2.和参考帧进行一个ORB匹配,如果找到足够的匹配就进行PnP解析
     ORBmatcher matcher(0.7,true);
     vector<MapPoint*> vpMapPointMatches;
 
@@ -788,8 +817,10 @@ bool Tracking::TrackReferenceKeyFrame()
         return false;
 
     mCurrentFrame.mvpMapPoints = vpMapPointMatches;
+    ///将上一帧的Pose作为当前帧的初始值,这样在优化的时候可以收敛的更快
     mCurrentFrame.SetPose(mLastFrame.mTcw);
 
+    ///3.优化当前帧的位姿
     Optimizer::PoseOptimization(&mCurrentFrame);
 
     // Discard outliers
