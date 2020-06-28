@@ -293,6 +293,10 @@ MapPoint* KeyFrame::GetMapPoint(const size_t &idx)
     return mvpMapPoints[idx];
 }
 
+/**
+ * 更新共视图的关系
+ * 统计当前帧和其它帧之间的共视3D点的数目,如果大于一定阈值,就在两个关键帧之间增加一条共视边
+ */
 void KeyFrame::UpdateConnections()
 {
     ///和当前关键帧有共视关系的关键帧以及共视点的数目
@@ -308,7 +312,10 @@ void KeyFrame::UpdateConnections()
 
     //For all map points in keyframe check in which other keyframes are they seen
     //Increase counter for those keyframes
-    ///首先遍历所有的MapPoint
+    /**
+     * 1.获取当前关键帧的所有MapPoint,并进行遍历;
+     * 2.遍历得到每个MapPoint的观测帧,统计其它帧和当前帧的共视点的数目,并储存在KFcounter中.
+     **/
     for(vector<MapPoint*>::iterator vit=vpMP.begin(), vend=vpMP.end(); vit!=vend; vit++)
     {
         MapPoint* pMP = *vit;
@@ -473,7 +480,8 @@ void KeyFrame::SetErase()
 }
 
 /**
- * 设置当前关键帧badflag,但是这并不意味着删除这个关键帧
+ * 设置当前关键帧badflag,这个函数主要处理当需要剔除某些关键帧的时候,
+ * 如何更新这个关键帧和其它关键帧的共视关系.
  * 
  */
 void KeyFrame::SetBadFlag()
@@ -489,11 +497,11 @@ void KeyFrame::SetBadFlag()
         }
     }
 
-    ///遍历和该帧由共视关系的所有帧,删除和它们和该帧的共视关系
+    ///1.遍历和该帧有共视关系的所有帧,删除和它们和该帧的共视关系
     for(map<KeyFrame*,int>::iterator mit = mConnectedKeyFrameWeights.begin(), mend=mConnectedKeyFrameWeights.end(); mit!=mend; mit++)
         mit->first->EraseConnection(this);
 
-    ///遍历该关键帧的所有MapPoint,该帧的不再作为相应MapPoint的观测帧
+    ///2.遍历该关键帧的所有MapPoint,该帧的不再作为相应MapPoint的观测帧
     for(size_t i=0; i<mvpMapPoints.size(); i++)
         if(mvpMapPoints[i])
             mvpMapPoints[i]->EraseObservation(this);
@@ -514,7 +522,7 @@ void KeyFrame::SetBadFlag()
 
         // Assign at each iteration one children with a parent (the pair with highest covisibility weight)
         // Include that children as new parent candidate for the rest
-        ///每次处理一个child节点,给这个child节点寻找一个与其共视程度最高的父节点
+        ///3.每次处理一个child节点,给这个child节点寻找一个与其共视程度最高的新父节点
         while(!mspChildrens.empty())
         {
             bool bContinue = false;
@@ -523,9 +531,10 @@ void KeyFrame::SetBadFlag()
             KeyFrame* pC;///pointer to Child Key Frame
             KeyFrame* pP; /// pointer to Parent Key Frame
 
-            ///遍历这个关键帧的所有子节点,给每个子节点重新找一个共视程度最高的父节点
+            ///4.遍历这个关键帧的所有子节点,给每个子节点重新找一个共视程度最高的父节点
             for(set<KeyFrame*>::iterator sit=mspChildrens.begin(), send=mspChildrens.end(); sit!=send; sit++)
             {
+                ///取出一个子节点
                 KeyFrame* pKF = *sit;
                 if(pKF->isBad())
                     continue;
@@ -533,13 +542,13 @@ void KeyFrame::SetBadFlag()
                 // Check if a parent candidate is connected to the keyframe
                 ///找出该子节点的所有共视帧
                 vector<KeyFrame*> vpConnected = pKF->GetVectorCovisibleKeyFrames();
-                ///遍历共视帧
+                ///5.遍历共视帧
                 for(size_t i=0, iend=vpConnected.size(); i<iend; i++)
                 {
-                    ///遍历候选父节点
+                    ///6.遍历候选父节点
                     for(set<KeyFrame*>::iterator spcit=sParentCandidates.begin(), spcend=sParentCandidates.end(); spcit!=spcend; spcit++)
                     {
-                        ///如果子节点的共视帧恰好是候选父节点帧
+                        ///7.如果子节点的共视帧恰好是候选父节点帧
                         if(vpConnected[i]->mnId == (*spcit)->mnId)
                         {
                             int w = pKF->GetWeight(vpConnected[i]);
@@ -553,22 +562,22 @@ void KeyFrame::SetBadFlag()
                         }
                     }
                 }
-            }
+            } ///for loop every child
 
             if(bContinue)
             {
-                ///子节点找到新的父节点,就换成新的父节点
+                ///8.子节点找到新的父节点,就换成新的父节点
                 pC->ChangeParent(pP);
-                ///将新的子节点作为候选的父节点
+                ///9.将新的子节点作为候选的父节点
                 sParentCandidates.insert(pC);
-                ///当前子节点不再作为当前帧的子节点
+                ///10.当前子节点不再作为当前帧的子节点
                 mspChildrens.erase(pC);
             }
             else
                 break;
         }//while
 
-        // If a children has no covisibility links with any parent candidate, assign to the original parent of this KF
+        // 11.If a children has no covisibility links with any parent candidate, assign to the original parent of this KF
         if(!mspChildrens.empty())
             for(set<KeyFrame*>::iterator sit=mspChildrens.begin(); sit!=mspChildrens.end(); sit++)
             {
