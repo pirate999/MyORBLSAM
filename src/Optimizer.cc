@@ -236,6 +236,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
 
 }
 
+//这里的顶点只有一个,那就是相机的Pose,因此这里只优化当前帧的pose，地图点固定.
 int Optimizer::PoseOptimization(Frame *pFrame)
 {
     g2o::SparseOptimizer optimizer;
