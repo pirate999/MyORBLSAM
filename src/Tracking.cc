@@ -589,11 +589,12 @@ void Tracking::StereoInitialization()
 /// init  monocular
 void Tracking::MonocularInitialization()
 {
-    /// if not Initializer not created
+    /// if Initializer not created
     if(!mpInitializer)
     {
         // Set Reference Frame
         /// if current frame's key point more than 100
+        ///大于100个特征点才能进行初始化
         if(mCurrentFrame.mvKeys.size()>100)
         {
             /// set init frame
@@ -631,6 +632,8 @@ void Tracking::MonocularInitialization()
 
         // Find correspondences
         ORBmatcher matcher(0.9,true);
+        ///在初始帧和当前帧之间进行ORB特征匹配
+        ///vbPrevMatched:为F1的特征点的像素坐标, vnMatches12: 为根据F1特征点id找到在F2中的id
         int nmatches = matcher.SearchForInitialization(mInitialFrame,mCurrentFrame,mvbPrevMatched,mvIniMatches,100);
 
         // Check if there are enough correspondences

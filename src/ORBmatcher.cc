@@ -427,19 +427,24 @@ namespace ORB_SLAM2
         return nmatches;
     }
 
+
     int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f> &vbPrevMatched, vector<int> &vnMatches12, int windowSize)
     {
         int nmatches = 0;
         vnMatches12 = vector<int>(F1.mvKeysUn.size(), -1);
 
+        //宽度为HISTO_LENGTH的直方图
         vector<int> rotHist[HISTO_LENGTH];
         for (int i = 0; i < HISTO_LENGTH; i++)
             rotHist[i].reserve(500);
         const float factor = 1.0f / HISTO_LENGTH;
 
+        //匹配的描述子之间的距离
         vector<int> vMatchedDistance(F2.mvKeysUn.size(), INT_MAX);
+        //储存的是F2和F1的匹配的特征点之间对应的索引ID,通过F2的特征点ID可以得到F1的特征点ID
         vector<int> vnMatches21(F2.mvKeysUn.size(), -1);
 
+        //遍历F1的特征点,为F1的每一个特征点在F2中找到一个最相近的特征点
         for (size_t i1 = 0, iend1 = F1.mvKeysUn.size(); i1 < iend1; i1++)
         {
             cv::KeyPoint kp1 = F1.mvKeysUn[i1];
@@ -447,28 +452,36 @@ namespace ORB_SLAM2
             if (level1 > 0)
                 continue;
 
+            ///将F1的特征点的位置作为在F2中搜索的初始位置,并搜索在windowSize范围内的特征点
             vector<size_t> vIndices2 = F2.GetFeaturesInArea(vbPrevMatched[i1].x, vbPrevMatched[i1].y, windowSize, level1, level1);
 
             if (vIndices2.empty())
                 continue;
 
+            //F1特征点对应的描述子
             cv::Mat d1 = F1.mDescriptors.row(i1);
 
             int bestDist = INT_MAX;
             int bestDist2 = INT_MAX;
             int bestIdx2 = -1;
 
+             //为F1的特征点在F2中找到一个最相近的特征点
             for (vector<size_t>::iterator vit = vIndices2.begin(); vit != vIndices2.end(); vit++)
             {
                 size_t i2 = *vit;
 
+                //F2特征点对应的描述子
                 cv::Mat d2 = F2.mDescriptors.row(i2);
 
+                //计算两个描述子之间的距离
                 int dist = DescriptorDistance(d1, d2);
 
+                //如果计算得到的距离小于已经储存的距离,就排除F2中的这个特征点
+                //说明F2中这个特征点已经在F1中找到更合适的匹配点了
                 if (vMatchedDistance[i2] <= dist)
                     continue;
 
+                //找到最小的两个匹配距离,和F2中最佳的匹配特征点
                 if (dist < bestDist)
                 {
                     bestDist2 = bestDist;
@@ -479,17 +492,21 @@ namespace ORB_SLAM2
                 {
                     bestDist2 = dist;
                 }
-            }
+            }//for
 
+            //最佳匹配点的匹配距离满足阈值
             if (bestDist <= TH_LOW)
             {
+                //最小距离比次小的距离小的比较明显
                 if (bestDist < (float)bestDist2 * mfNNratio)
                 {
+                    //如果F2:bestIdx2已经有对应的F1匹配特征点,首先删除这个对应连接
                     if (vnMatches21[bestIdx2] >= 0)
                     {
                         vnMatches12[vnMatches21[bestIdx2]] = -1;
                         nmatches--;
                     }
+                    //储存匹配ID的在F1和F2之间的对应关系
                     vnMatches12[i1] = bestIdx2;
                     vnMatches21[bestIdx2] = i1;
                     vMatchedDistance[bestIdx2] = bestDist;
@@ -497,6 +514,7 @@ namespace ORB_SLAM2
 
                     if (mbCheckOrientation)
                     {
+                        //特征点的方向差
                         float rot = F1.mvKeysUn[i1].angle - F2.mvKeysUn[bestIdx2].angle;
                         if (rot < 0.0)
                             rot += 360.0f;
@@ -504,18 +522,21 @@ namespace ORB_SLAM2
                         if (bin == HISTO_LENGTH)
                             bin = 0;
                         assert(bin >= 0 && bin < HISTO_LENGTH);
+                        //将F1的特征点i1加入对应的直方图格子
                         rotHist[bin].push_back(i1);
                     }
                 }
             }
         }
 
+        //如果需要匹配旋转角度
         if (mbCheckOrientation)
         {
             int ind1 = -1;
             int ind2 = -1;
             int ind3 = -1;
 
+            ///得到三个最大的值
             ComputeThreeMaxima(rotHist, HISTO_LENGTH, ind1, ind2, ind3);
 
             for (int i = 0; i < HISTO_LENGTH; i++)

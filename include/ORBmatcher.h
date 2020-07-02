@@ -71,7 +71,7 @@ public:
     int SearchByBoW(KeyFrame *pKF1, KeyFrame* pKF2, std::vector<MapPoint*> &vpMatches12);
 
     // Matching for the Map Initialization (only used in the monocular case)
-    /// F1: init frame, F2: current frame, vbPrevMatched: keypoint to be matched, vnMatches12: matched keypoint result, windowsSize:search windows size
+    /// F1: init frame, F2: current frame, vbPrevMatched:为F1的特征点的像素坐标, vnMatches12: matched keypoint result, windowsSize:search windows size
     int SearchForInitialization(Frame &F1, Frame &F2, std::vector<cv::Point2f> &vbPrevMatched, std::vector<int> &vnMatches12, int windowSize=10);
 
     // Matching to triangulate new MapPoints. Check Epipolar Constraint.

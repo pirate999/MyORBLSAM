@@ -41,6 +41,12 @@ Initializer::Initializer(const Frame &ReferenceFrame, float sigma, int iteration
     mMaxIterations = iterations;
 }
 
+
+/**
+ * 初始化
+ * 1.RANSAC随机选择200组数据,每组数据8个特征点
+ * 2.分别计算H和F矩阵,选择效果最好的那个
+ */
 bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatches12, cv::Mat &R21, cv::Mat &t21,
                              vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated)
 {
@@ -51,6 +57,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     mvMatches12.clear();
     mvMatches12.reserve(mvKeys2.size());
     mvbMatched1.resize(mvKeys1.size());
+    //将vMatches12中的特征点匹配关系填充到mvMatches12中
     for(size_t i=0, iend=vMatches12.size();i<iend; i++)
     {
         if(vMatches12[i]>=0)
@@ -64,13 +71,14 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     }
 
     /// matched key points size
+    ///匹配的特征点的数目
     const int N = mvMatches12.size();
 
     // Indices for minimum set selection
     vector<size_t> vAllIndices;
     vAllIndices.reserve(N);
     vector<size_t> vAvailableIndices;
-
+    //索引值
     for(int i=0; i<N; i++)
     {
         vAllIndices.push_back(i);
@@ -78,11 +86,12 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
 
     // Generate sets of 8 points for each RANSAC iteration
      ///200 * vector<size_t>
+     //为每次的RANSAC迭代生成8个点
     mvSets = vector< vector<size_t> >(mMaxIterations,vector<size_t>(8,0));
 
     DUtils::Random::SeedRandOnce(0);
 
-    /// 200 times iterations
+    /// 200 times iterations,生成200次迭代数据
     for(int it=0; it<mMaxIterations; it++)
     {
         vAvailableIndices = vAllIndices;
@@ -95,6 +104,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
             /// get key point index according random int number
             int idx = vAvailableIndices[randi];
 
+            //填充第it次迭代的第j个数据
             mvSets[it][j] = idx;
 
             /// move the last element to replace randi index, and delete the last element
@@ -104,6 +114,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     }
 
     // Launch threads to compute in parallel a fundamental matrix and a homography
+    //启动两个线程同步分别计算H和F矩阵
     vector<bool> vbMatchesInliersH, vbMatchesInliersF;
     float SH, SF;
     cv::Mat H, F;
@@ -127,13 +138,16 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     return false;
 }
 
-
+/**
+ * 找到最佳的Homography矩阵
+ */
 void Initializer::FindHomography(vector<bool> &vbMatchesInliers, float &score, cv::Mat &H21)
 {
     // Number of putative matches
     const int N = mvMatches12.size();
 
     // Normalize coordinates
+    //归一化坐标
     vector<cv::Point2f> vPn1, vPn2;
     cv::Mat T1, T2;
     Normalize(mvKeys1,vPn1, T1);
@@ -152,6 +166,7 @@ void Initializer::FindHomography(vector<bool> &vbMatchesInliers, float &score, c
     float currentScore;
 
     // Perform all RANSAC iterations and save the solution with highest score
+    //执行迭代,保存得分最高的解决方案
     for(int it=0; it<mMaxIterations; it++)
     {
         // Select a minimum set
@@ -164,11 +179,19 @@ void Initializer::FindHomography(vector<bool> &vbMatchesInliers, float &score, c
             /// key point in frame 2
             vPn2i[j] = vPn2[mvMatches12[idx].second];
         }
-
+        /**
+         *  这里计算出来的H矩阵是相对于归一化之后的特征点的,我们需要的是归一化之前的H21矩阵
+         * 设P1,P2分别为F1和F2两帧上的匹配的特征点(未归一化),其通过Hn矩阵的映射关系为
+         * 有1.T2*P2 = Hn*T1*P1
+         *     2. H21*P1=P2 ,
+         * 因此T2*H21*P1=Hn* T1*P1
+         * ==>H21 = T2^-1*Hn*T1
+         * */
         cv::Mat Hn = ComputeH21(vPn1i,vPn2i);
         H21i = T2inv*Hn*T1;
         H12i = H21i.inv();
 
+        //在参数mSigma下给这个H矩阵评分
         currentScore = CheckHomography(H21i, H12i, vbCurrentInliers, mSigma);
 
         if(currentScore>score)
@@ -181,6 +204,7 @@ void Initializer::FindHomography(vector<bool> &vbMatchesInliers, float &score, c
 }
 
 
+/**计算F矩阵 */
 void Initializer::FindFundamental(vector<bool> &vbMatchesInliers, float &score, cv::Mat &F21)
 {
     // Number of putative matches
@@ -339,8 +363,9 @@ float Initializer::CheckHomography(const cv::Mat &H21, const cv::Mat &H12, vecto
 
     float score = 0;
 
+    //来源于卡方分布,有95%的可信度
     const float th = 5.991;
-
+    //卡方分布的方差
     const float invSigmaSquare = 1.0/(sigma*sigma);
 
     for(int i=0; i<N; i++)
@@ -362,8 +387,10 @@ float Initializer::CheckHomography(const cv::Mat &H21, const cv::Mat &H12, vecto
         const float u2in1 = (h11inv*u2+h12inv*v2+h13inv)*w2in1inv;
         const float v2in1 = (h21inv*u2+h22inv*v2+h23inv)*w2in1inv;
 
+        //计算v2,u2投影到F1之后,与v1,u1的差值的平方和
         const float squareDist1 = (u1-u2in1)*(u1-u2in1)+(v1-v2in1)*(v1-v2in1);
-
+        //计算卡方值
+        //ref https://en.wikipedia.org/wiki/Chi-square_distribution [Occurrence and applications] table(chi-square distribution)
         const float chiSquare1 = squareDist1*invSigmaSquare;
 
         if(chiSquare1>th)
@@ -379,9 +406,9 @@ float Initializer::CheckHomography(const cv::Mat &H21, const cv::Mat &H12, vecto
         const float v1in2 = (h21*u1+h22*v1+h23)*w1in2inv;
 
         const float squareDist2 = (u2-u1in2)*(u2-u1in2)+(v2-v1in2)*(v2-v1in2);
-
         const float chiSquare2 = squareDist2*invSigmaSquare;
 
+        //统计inlier和分数
         if(chiSquare2>th)
             bIn = false;
         else
@@ -413,8 +440,10 @@ float Initializer::CheckFundamental(const cv::Mat &F21, vector<bool> &vbMatchesI
     vbMatchesInliers.resize(N);
 
     float score = 0;
-
+    
+    //卡方分布1自由度,95%可信度
     const float th = 3.841;
+    //卡方分布2自由度,95%可信度
     const float thScore = 5.991;
 
     const float invSigmaSquare = 1.0/(sigma*sigma);
@@ -451,13 +480,14 @@ float Initializer::CheckFundamental(const cv::Mat &F21, vector<bool> &vbMatchesI
 
         // Reprojection error in second image
         // l1 =x2tF21=(a1,b1,c1)
-
+        //F矩阵将点映射成一条直线
         const float a1 = f11*u2+f21*v2+f31;
         const float b1 = f12*u2+f22*v2+f32;
         const float c1 = f13*u2+f23*v2+f33;
 
         const float num1 = a1*u1+b1*v1+c1;
 
+        //点到直线的距离的平方
         const float squareDist2 = num1*num1/(a1*a1+b1*b1);
 
         const float chiSquare2 = squareDist2*invSigmaSquare;
@@ -578,6 +608,10 @@ bool Initializer::ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv:
     return false;
 }
 
+/**
+ * 1.vbMatchesInliers统计重投影的成功的inlier;
+ * 2.
+ */
 bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv::Mat &K,
                       cv::Mat &R21, cv::Mat &t21, vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated, float minParallax, int minTriangulated)
 {
@@ -758,9 +792,9 @@ void Initializer::Triangulate(const cv::KeyPoint &kp1, const cv::KeyPoint &kp2, 
 /// vNormalizedPoints=T*vKeys
 ///
 /// T = [ sx 0  -meanX*sX; 
-///       0  sy -meanY*sY; 
-///       0  0          1 ]
-///
+///           0  sy -meanY*sY; 
+///           0  0          1 ]
+/// 对特征点的像素坐标进行归一化
 void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2f> &vNormalizedPoints, cv::Mat &T)
 {
     float meanX = 0;
@@ -776,12 +810,14 @@ void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2
         meanY += vKeys[i].pt.y;
     }
 
+    //1.求出质心
     meanX = meanX/N;
     meanY = meanY/N;
 
     float meanDevX = 0;
     float meanDevY = 0;
 
+    //2.减去质心
     for(int i=0; i<N; i++)
     {
         /// remove the center of mass
@@ -793,20 +829,22 @@ void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2
     }
 
     /// mean abs dis to center of mass
+    //3.计算特征点到质心的平均距离
     meanDevX = meanDevX/N;
     meanDevY = meanDevY/N;
 
-    /// 2. get sX, sY
+    ///4. 计算缩放因子 sX, sY
     float sX = 1.0/meanDevX;
     float sY = 1.0/meanDevY;
 
-    /// 3. scale points use sX, sY
+    ///5. 使用缩放因此缩放特征点
     for(int i=0; i<N; i++)
     {
         vNormalizedPoints[i].x = vNormalizedPoints[i].x * sX;
         vNormalizedPoints[i].y = vNormalizedPoints[i].y * sY;
     }
 
+    //6.保存转换矩阵T,用来恢复归一化之前的尺度信息
     T = cv::Mat::eye(3,3,CV_32F);
     T.at<float>(0,0) = sX;
     T.at<float>(1,1) = sY;
@@ -844,7 +882,7 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
     P2 = K*P2;
 
     cv::Mat O2 = -R.t()*t;
-
+ 
     int nGood=0;
 
     for(size_t i=0, iend=vMatches12.size();i<iend;i++)
