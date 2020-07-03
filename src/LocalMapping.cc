@@ -49,6 +49,7 @@ namespace ORB_SLAM2
  * 然后剔除不合理的地图点，然后三角化新的关键帧创建更多地图点，
  * 然后进行LocalBA优化
  */
+
     void LocalMapping::Run()
     {
 
@@ -112,7 +113,7 @@ namespace ORB_SLAM2
                 break;
 
             usleep(3000);
-        }
+        }//while
 
         SetFinish();
     }
@@ -127,6 +128,7 @@ namespace ORB_SLAM2
         mbAbortBA = true;
     }
 
+///检测是否由新的关键帧
     bool LocalMapping::CheckNewKeyFrames()
     {
         unique_lock<mutex> lock(mMutexNewKFs);
@@ -244,6 +246,7 @@ namespace ORB_SLAM2
         if (mbMonocular)
             nn = 20;
         /// find the best nn number key frame in current frame's covisibility key frame
+        //找到最共视的nn帧关键帧
         const vector<KeyFrame *> vpNeighKFs = mpCurrentKeyFrame->GetBestCovisibilityKeyFrames(nn);
 
         ORBmatcher matcher(0.6, false);
@@ -269,6 +272,7 @@ namespace ORB_SLAM2
 
         // Search matches with epipolar restriction and triangulate
         /// loop neighbody key frame
+        //遍历共视的关键帧,并且进行极限搜索,和三角化
         for (size_t i = 0; i < vpNeighKFs.size(); i++)
         {
             /// if i > 0 and have new key frame, stop create map point
@@ -303,9 +307,11 @@ namespace ORB_SLAM2
             }
 
             // Compute Fundamental Matrix
+            //计算两帧之间的F矩阵
             cv::Mat F12 = ComputeF12(mpCurrentKeyFrame, pKF2);
 
             // Search matches that fullfil epipolar constraint
+            //利用极限搜索进行匹配
             vector<pair<size_t, size_t>> vMatchedIndices;
             matcher.SearchForTriangulation(mpCurrentKeyFrame, pKF2, F12, vMatchedIndices, false);
 
@@ -324,6 +330,7 @@ namespace ORB_SLAM2
             const float &invfy2 = pKF2->invfy;
 
             // Triangulate each match
+            //三角化匹配的特征点
             const int nmatches = vMatchedIndices.size();
             for (int ikp = 0; ikp < nmatches; ikp++)
             {
@@ -365,6 +372,7 @@ namespace ORB_SLAM2
                 if (cosParallaxRays < cosParallaxStereo && cosParallaxRays > 0 && (bStereo1 || bStereo2 || cosParallaxRays < 0.9998))
                 {
                     // Linear Triangulation Method
+                    //三角化特征点,这里跟单目初始化中的的三角化一样
                     cv::Mat A(4, 4, CV_32F);
                     A.row(0) = xn1.at<float>(0) * Tcw1.row(2) - Tcw1.row(0);
                     A.row(1) = xn1.at<float>(1) * Tcw1.row(2) - Tcw1.row(1);
@@ -405,6 +413,7 @@ namespace ORB_SLAM2
                     continue;
 
                 //Check reprojection error in first keyframe
+                //在第一帧检测重投影误差
                 const float &sigmaSquare1 = mpCurrentKeyFrame->mvLevelSigma2[kp1.octave];
                 const float x1 = Rcw1.row(0).dot(x3Dt) + tcw1.at<float>(0);
                 const float y1 = Rcw1.row(1).dot(x3Dt) + tcw1.at<float>(1);
@@ -458,6 +467,7 @@ namespace ORB_SLAM2
                 }
 
                 //Check scale consistency
+                //检查尺度的连续性
                 cv::Mat normal1 = x3D - Ow1;
                 float dist1 = cv::norm(normal1);
 
@@ -467,15 +477,21 @@ namespace ORB_SLAM2
                 if (dist1 == 0 || dist2 == 0)
                     continue;
 
+                //到光心的距离的比例
                 const float ratioDist = dist2 / dist1;
+                //特征点所在四叉树层的缩放比例
                 const float ratioOctave = mpCurrentKeyFrame->mvScaleFactors[kp1.octave] / pKF2->mvScaleFactors[kp2.octave];
 
                 /*if(fabs(ratioDist-ratioOctave)>ratioFactor)
                 continue;*/
+                //这里还是利用特征点所在的金字塔层次和特征点距离光心的距离的关系
+                //ratioDist  < ratioOctave / ratioFactor ;
+                //ratioDist  > ratioOctave * ratioFactor 
                 if (ratioDist * ratioFactor < ratioOctave || ratioDist > ratioOctave * ratioFactor)
                     continue;
 
                 // Triangulation is succesfull
+                //三角化成功,创建新的地图点
                 MapPoint *pMP = new MapPoint(x3D, mpCurrentKeyFrame, mpMap);
 
                 pMP->AddObservation(mpCurrentKeyFrame, idx1);
@@ -493,9 +509,11 @@ namespace ORB_SLAM2
 
                 nnew++;
             }
-        }
+        }//for
     }
 
+ // Find more matches in neighbor keyframes and fuse point duplications
+ //在相邻的关键帧中找到更多的匹配,并融合重复的特征点
     void LocalMapping::SearchInNeighbors()
     {
         // Retrieve neighbor keyframes
@@ -515,6 +533,7 @@ namespace ORB_SLAM2
             pKFi->mnFuseTargetForKF = mpCurrentKeyFrame->mnId;
 
             // Extend to some second neighbors
+            //拓展到二级的相邻的关键帧
             const vector<KeyFrame *> vpSecondNeighKFs = pKFi->GetBestCovisibilityKeyFrames(5);
             for (vector<KeyFrame *>::const_iterator vit2 = vpSecondNeighKFs.begin(), vend2 = vpSecondNeighKFs.end(); vit2 != vend2; vit2++)
             {
@@ -532,6 +551,7 @@ namespace ORB_SLAM2
         {
             KeyFrame *pKFi = *vit;
             /// fush current key frame's map point with pKF frame's map point, replace duplicate map point
+            //将当前帧的地图点和关键帧的地图点进行融合,去除重复的地图点
             matcher.Fuse(pKFi, vpMapPointMatches);
         }
 
@@ -539,7 +559,8 @@ namespace ORB_SLAM2
         vector<MapPoint *> vpFuseCandidates;
         vpFuseCandidates.reserve(vpTargetKFs.size() * vpMapPointMatches.size());
 
-        /// loop all surround KeyFrames
+        /// loop all surround KeyFrames,
+        ///获取相邻关键帧的MapPoint
         for (vector<KeyFrame *>::iterator vitKF = vpTargetKFs.begin(), vendKF = vpTargetKFs.end(); vitKF != vendKF; vitKF++)
         {
             /// KeyFrame
@@ -559,6 +580,7 @@ namespace ORB_SLAM2
             }
         }
 
+        //融合当前帧和相邻关键帧的MapPoint
         matcher.Fuse(mpCurrentKeyFrame, vpFuseCandidates);
 
         // Update points
@@ -678,25 +700,33 @@ namespace ORB_SLAM2
         mbAbortBA = true;
     }
 
+    /**
+     * 剔除冗余的关键帧
+     * 当一个关键帧90%的MapPoint在至少其它三个关键帧中被观测到,
+     * 那么这个关键帧被视为冗余的,我们值考虑近点
+     */
     void LocalMapping::KeyFrameCulling()
     {
         // Check redundant keyframes (only local keyframes)
         // A keyframe is considered redundant if the 90% of the MapPoints it sees, are seen
         // in at least other 3 keyframes (in the same or finer scale)
         // We only consider close stereo points
+        //遍历当前帧的共视帧
         vector<KeyFrame *> vpLocalKeyFrames = mpCurrentKeyFrame->GetVectorCovisibleKeyFrames();
-
         for (vector<KeyFrame *>::iterator vit = vpLocalKeyFrames.begin(), vend = vpLocalKeyFrames.end(); vit != vend; vit++)
         {
             KeyFrame *pKF = *vit;
             if (pKF->mnId == 0)
                 continue;
+            //得到共视帧的地图点
             const vector<MapPoint *> vpMapPoints = pKF->GetMapPointMatches();
 
             int nObs = 3;
             const int thObs = nObs;
             int nRedundantObservations = 0;
+            //关键帧中好的地图点的数目
             int nMPs = 0;
+            //遍历地图点
             for (size_t i = 0, iend = vpMapPoints.size(); i < iend; i++)
             {
                 MapPoint *pMP = vpMapPoints[i];
@@ -711,11 +741,14 @@ namespace ORB_SLAM2
                         }
 
                         nMPs++;
+                        //地图点的观测帧的数目大于3
                         if (pMP->Observations() > thObs)
                         {
+                            //提取的特征点所在的四叉树的层级
                             const int &scaleLevel = pKF->mvKeysUn[i].octave;
                             const map<KeyFrame *, size_t> observations = pMP->GetObservations();
                             int nObs = 0;
+                            //遍历获取地图点的观测帧
                             for (map<KeyFrame *, size_t>::const_iterator mit = observations.begin(), mend = observations.end(); mit != mend; mit++)
                             {
                                 KeyFrame *pKFi = mit->first;
@@ -723,25 +756,29 @@ namespace ORB_SLAM2
                                     continue;
                                 const int &scaleLeveli = pKFi->mvKeysUn[mit->second].octave;
 
+                                //在低于scaleLevel + 1的缩放层级观测到该点
                                 if (scaleLeveli <= scaleLevel + 1)
-                                {
+                                {   
+                                    //观测到该点的计数+1
                                     nObs++;
                                     if (nObs >= thObs)
                                         break;
                                 }
                             }
+                            //由至少其它三帧观测到该点, 冗余观测计数+1,意味这该MapPoint点可以在其它帧中被观测到.
                             if (nObs >= thObs)
                             {
                                 nRedundantObservations++;
                             }
-                        }
-                    }
-                }
-            }
+                        }//if
+                    }//if
+                }//for
+            }//for
 
+            //如果有冗余备份观测帧的MapPoint的数目大于90%,那么删除该关键帧
             if (nRedundantObservations > 0.9 * nMPs)
                 pKF->SetBadFlag();
-        }
+        }//for
     }
 
     cv::Mat LocalMapping::SkewSymmetricMatrix(const cv::Mat &v)

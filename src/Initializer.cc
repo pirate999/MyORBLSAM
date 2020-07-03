@@ -526,6 +526,7 @@ bool Initializer::ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv:
     cv::Mat t2=-t;
 
     // Reconstruct with the 4 hyphoteses and check
+    //用三角化的点的方式检测4种模型
     vector<cv::Point3f> vP3D1, vP3D2, vP3D3, vP3D4;
     vector<bool> vbTriangulated1,vbTriangulated2,vbTriangulated3, vbTriangulated4;
     float parallax1,parallax2, parallax3, parallax4;
@@ -553,6 +554,8 @@ bool Initializer::ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv:
         nsimilar++;
 
     // If there is not a clear winner or not enough triangulated points reject initialization
+    //maxGood<nMinGood:三角化成功的点数目过少
+    //nsimilar>1,没有一个模型明显好于其它模型
     if(maxGood<nMinGood || nsimilar>1)
     {
         return false;
@@ -609,8 +612,7 @@ bool Initializer::ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv:
 }
 
 /**
- * 1.vbMatchesInliers统计重投影的成功的inlier;
- * 2.
+ * 将H矩阵分解为R,t,并三角化点
  */
 bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv::Mat &K,
                       cv::Mat &R21, cv::Mat &t21, vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated, float minParallax, int minTriangulated)
@@ -726,7 +728,7 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
         if(n.at<float>(2)<0)
             n=-n;
         vn.push_back(n);
-    }
+    } 
 
 
     int bestGood = 0;
@@ -738,6 +740,7 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
 
     // Instead of applying the visibility constraints proposed in the Faugeras' paper (which could fail for points seen with low parallax)
     // We reconstruct all hypotheses and check in terms of triangulated points and parallax
+    //遍历计算出来的8种,R,t,然后根据R,t计算三角化出来的匹配点的数目,找出最好和次好的模型
     for(size_t i=0; i<8; i++)
     {
         float parallaxi;
@@ -760,7 +763,12 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
         }
     }
 
-
+    /**
+     * 1.最好的模型比次好的模型有足够的差距;
+     * 2.最好的模型视差>=最小视差
+     * 3.最好模型的三角化陈宫的点的数目大于一定的阈值;
+     * 4.最好的模型的三角化成功数量和通过H矩阵重投影的特征点数目的比例大于0.9
+     */
     if(secondBestGood<0.75*bestGood && bestParallax>=minParallax && bestGood>minTriangulated && bestGood>0.9*N)
     {
         vR[bestSolutionIdx].copyTo(R21);
@@ -774,6 +782,7 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
     return false;
 }
 
+///<Multiple_View_Geometry_in_Computer_Vision__2nd_Edition> 12.2 Linear triangulation methods
 void Initializer::Triangulate(const cv::KeyPoint &kp1, const cv::KeyPoint &kp2, const cv::Mat &P1, const cv::Mat &P2, cv::Mat &x3D)
 {
     cv::Mat A(4,4,CV_32F);
@@ -852,7 +861,20 @@ void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2
     T.at<float>(1,2) = -meanY*sY;
 }
 
-
+/**
+ * @brief:检测R,t
+ * R:输入的旋转矩阵R;
+ * t:输入的平移矩阵t;
+ * vKeys1:输入的第一组特征点
+ * vKeys2:输入的第二组特征点;
+ * vMatches12:输入的匹配的数目;
+ * vbMatchesInliers:输出inlier的vector
+ * K:输入内参
+ * vP3D:输出3D点的坐标;
+ * th2:输入阈值
+ * vbGood:输出好的点的flag;
+ * parallax:输出视差
+ */
 int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::KeyPoint> &vKeys1, const vector<cv::KeyPoint> &vKeys2,
                        const vector<Match> &vMatches12, vector<bool> &vbMatchesInliers,
                        const cv::Mat &K, vector<cv::Point3f> &vP3D, float th2, vector<bool> &vbGood, float &parallax)
@@ -870,9 +892,11 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
     vCosParallax.reserve(vKeys1.size());
 
     // Camera 1 Projection Matrix K[I|0]
+    //相机1的坐标系和世界坐标系相同
     cv::Mat P1(3,4,CV_32F,cv::Scalar(0));
     K.copyTo(P1.rowRange(0,3).colRange(0,3));
 
+    //假设相机光心的在世界坐标系的坐标为(0,0,0)
     cv::Mat O1 = cv::Mat::zeros(3,1,CV_32F);
 
     // Camera 2 Projection Matrix K[R|t]
@@ -880,13 +904,15 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
     R.copyTo(P2.rowRange(0,3).colRange(0,3));
     t.copyTo(P2.rowRange(0,3).col(3));
     P2 = K*P2;
-
+    //将相机光心2转换到世界坐标系
+    //O1=R12*O2+t12 ==> O2=R12'*(O1-t12) ==> O2=-R12'*t12
     cv::Mat O2 = -R.t()*t;
  
     int nGood=0;
-
+    //遍历所有匹配的特征点
     for(size_t i=0, iend=vMatches12.size();i<iend;i++)
     {
+        //如果不是inlier,则跳过
         if(!vbMatchesInliers[i])
             continue;
 
@@ -894,8 +920,10 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
         const cv::KeyPoint &kp2 = vKeys2[vMatches12[i].second];
         cv::Mat p3dC1;
 
+        //三角化匹配特征点
         Triangulate(kp1,kp2,P1,P2,p3dC1);
 
+        //判断三角化点的大小是否无穷大
         if(!isfinite(p3dC1.at<float>(0)) || !isfinite(p3dC1.at<float>(1)) || !isfinite(p3dC1.at<float>(2)))
         {
             vbGood[vMatches12[i].first]=false;
@@ -903,25 +931,30 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
         }
 
         // Check parallax
+        //检测视差
         cv::Mat normal1 = p3dC1 - O1;
         float dist1 = cv::norm(normal1);
 
         cv::Mat normal2 = p3dC1 - O2;
         float dist2 = cv::norm(normal2);
 
+        //3D点和两个光心构成的夹角的cos值
         float cosParallax = normal1.dot(normal2)/(dist1*dist2);
 
         // Check depth in front of first camera (only if enough parallax, as "infinite" points can easily go to negative depth)
+        //视差角度太大,并且深度为负,就淘汰
         if(p3dC1.at<float>(2)<=0 && cosParallax<0.99998)
             continue;
 
         // Check depth in front of second camera (only if enough parallax, as "infinite" points can easily go to negative depth)
+        //视差角度太大,并且深度为负,就淘汰
         cv::Mat p3dC2 = R*p3dC1+t;
 
         if(p3dC2.at<float>(2)<=0 && cosParallax<0.99998)
             continue;
 
         // Check reprojection error in first image
+        //将三角化出来的3D点重新投影到第一帧图像,然后计算方差
         float im1x, im1y;
         float invZ1 = 1.0/p3dC1.at<float>(2);
         im1x = fx*p3dC1.at<float>(0)*invZ1+cx;
@@ -933,6 +966,7 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
             continue;
 
         // Check reprojection error in second image
+         //将三角化出来的3D点重新投影到第二帧图像,然后计算方差
         float im2x, im2y;
         float invZ2 = 1.0/p3dC2.at<float>(2);
         im2x = fx*p3dC2.at<float>(0)*invZ2+cx;
@@ -940,22 +974,28 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
 
         float squareError2 = (im2x-kp2.pt.x)*(im2x-kp2.pt.x)+(im2y-kp2.pt.y)*(im2y-kp2.pt.y);
 
+        //重投影误差太大,淘汰
         if(squareError2>th2)
             continue;
 
+        //保存视差角
         vCosParallax.push_back(cosParallax);
         vP3D[vMatches12[i].first] = cv::Point3f(p3dC1.at<float>(0),p3dC1.at<float>(1),p3dC1.at<float>(2));
         nGood++;
 
+        //视差角度足够大,三角化成功
         if(cosParallax<0.99998)
             vbGood[vMatches12[i].first]=true;
-    }
+    }//for
 
     if(nGood>0)
     {
+        //视差角度从大到小排列
         sort(vCosParallax.begin(),vCosParallax.end());
 
+        //取出第50个,或者最后(就是最小的视差角度最大的那个)
         size_t idx = min(50,int(vCosParallax.size()-1));
+        //计算视差角
         parallax = acos(vCosParallax[idx])*180/CV_PI;
     }
     else
@@ -964,6 +1004,9 @@ int Initializer::CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::Ke
     return nGood;
 }
 
+/**
+ * 分解本质矩阵,得到两种不同R,t
+ */
 void Initializer::DecomposeE(const cv::Mat &E, cv::Mat &R1, cv::Mat &R2, cv::Mat &t)
 {
     cv::Mat u,w,vt;
