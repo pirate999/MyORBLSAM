@@ -40,7 +40,7 @@ class Tracking;
 class LocalMapping;
 class KeyFrameDatabase;
 
-
+/**用来做回环检测的类 */
 class LoopClosing
 {
 public:
@@ -51,6 +51,13 @@ public:
 
 public:
 
+    /**
+     * @brief:构造函数
+     * @param pMap:地图
+     * @param pDB:关键帧数据库
+     * @param pVoc :词袋模型
+     * @param bFixScale:是否固定缩放比例
+     */
     LoopClosing(Map* pMap, KeyFrameDatabase* pDB, ORBVocabulary* pVoc,const bool bFixScale);
 
     void SetTracker(Tracking* pTracker);
@@ -60,6 +67,7 @@ public:
     // Main function
     void Run();
 
+    /**插入关键帧 */
     void InsertKeyFrame(KeyFrame *pKF);
 
     void RequestReset();
@@ -112,6 +120,7 @@ protected:
 
     LocalMapping *mpLocalMapper;
 
+    //储存所有的回环的关键帧
     std::list<KeyFrame*> mlpLoopKeyFrameQueue;
 
     std::mutex mMutexLoopQueue;
@@ -121,6 +130,7 @@ protected:
 
     // Loop detector variables
     KeyFrame* mpCurrentKF;
+    //回环匹配上的一帧
     KeyFrame* mpMatchedKF;
     std::vector<ConsistentGroup> mvConsistentGroups;
     std::vector<KeyFrame*> mvpEnoughConsistentCandidates;

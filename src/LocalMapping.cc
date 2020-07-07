@@ -602,7 +602,7 @@ namespace ORB_SLAM2
         mpCurrentKeyFrame->UpdateConnections();
     }
 
-    /// F = K^-T * t^ * R * K^-1
+    /// 利用公式:F = K^-T * t^ * R * K^-1计算F矩阵
     cv::Mat LocalMapping::ComputeF12(KeyFrame *&pKF1, KeyFrame *&pKF2)
     {
         /// R1w means rotation from pKF1 frame coordinate to world coordinate

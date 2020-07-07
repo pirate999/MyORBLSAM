@@ -1290,7 +1290,7 @@ namespace ORB_SLAM2
             }
         }
 
-        // Transform from KF2 to KF2 and search
+        // Transform from KF2 to KF1 and search
         for (int i2 = 0; i2 < N2; i2++)
         {
             MapPoint *pMP = vpMapPoints2[i2];

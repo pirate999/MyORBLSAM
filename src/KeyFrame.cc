@@ -467,12 +467,14 @@ void KeyFrame::SetErase()
 {
     {
         unique_lock<mutex> lock(mMutexConnections);
+        //如果是回环边不是空的,设置可以删除
         if(mspLoopEdges.empty())
         {
             mbNotErase = false;
         }
     }
 
+    //如果打算删除,那么立刻执行删除
     if(mbToBeErased)
     {
         SetBadFlag();
@@ -488,8 +490,10 @@ void KeyFrame::SetBadFlag()
 {   
     {
         unique_lock<mutex> lock(mMutexConnections);
+        //第一帧不能删除
         if(mnId==0)
             return;
+        //如果是不能删除,那么设置为准备删除
         else if(mbNotErase)
         {
             mbToBeErased = true;

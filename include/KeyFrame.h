@@ -106,6 +106,8 @@ public:
     bool IsInImage(const float &x, const float &y) const;
 
     // Enable/Disable bad flag changes
+    // Avoid that a keyframe can be erased while it is being process by loop closing
+    //避免关键帧在被回环处理的时候,是可以被删除的
     void SetNotErase();
     void SetErase();
 

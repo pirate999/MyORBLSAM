@@ -218,11 +218,11 @@ private:
     void AssignFeaturesToGrid();
 
     // Rotation, translation and camera center
-    /// right multiple mRcw means transform point from current frame coordinate to world coordinate
+    /// left multiple mRcw means transform point from  world coordinate to camera coordinate
     cv::Mat mRcw;
     cv::Mat mtcw;
     cv::Mat mRwc;
-    /// camera center coordinates in world frame
+    /// camera center coordinates in world frame.相机中心在世界坐标系中的位置
     cv::Mat mOw; //==mtwc
 };
 
