@@ -205,7 +205,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
         {
             pKF->mTcwGBA.create(4,4,CV_32F);
             Converter::toCvMat(SE3quat).copyTo(pKF->mTcwGBA);
-            pKF->mnBAGlobalForKF = nLoopKF;
+            pKF->mnBAGlobalForKF = nLoopKF;//标记为已经经过BA优化处理过的
         }
     }
 

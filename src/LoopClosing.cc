@@ -651,12 +651,17 @@ void LoopClosing::CorrectLoop()
     {
         //取一个关键帧
         KeyFrame* pKFi = *vit;
-        //取更新之前的该关键帧的共视帧
+        //取更新之前的该关键帧的共视帧, 
+        /** ///key frame and it's weight
+         * 这里实际获取的是std::vector<KeyFrame*> mvpOrderedConnectedKeyFrames; 
+         * 而pKFi->GetConnectedKeyFrames();实际获取的是std::map<KeyFrame*,int> mConnectedKeyFrameWeights;
+         * 经过排列之后的从covisibility graph
+        */
         vector<KeyFrame*> vpPreviousNeighbors = pKFi->GetVectorCovisibleKeyFrames();
 
         // Update connections. Detect new links.
         pKFi->UpdateConnections();
-        //取更新之后的共视帧
+        //取更新之后的共视帧,
         LoopConnections[pKFi]=pKFi->GetConnectedKeyFrames();
         for(vector<KeyFrame*>::iterator vit_prev=vpPreviousNeighbors.begin(), vend_prev=vpPreviousNeighbors.end(); vit_prev!=vend_prev; vit_prev++)
         {
@@ -757,10 +762,14 @@ void LoopClosing::ResetIfRequested()
     }
 }
 
+/**
+ * 
+ */
 void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
 {
     cout << "Starting Global Bundle Adjustment" << endl;
 
+    /**迭代10次 */
     int idx =  mnFullBAIdx;
     Optimizer::GlobalBundleAdjustemnt(mpMap,10,&mbStopGBA,nLoopKF,false);
 
@@ -768,6 +777,10 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
     // Local Mapping was active during BA, that means that there might be new keyframes
     // not included in the Global BA and they are not consistent with the updated map.
     // We need to propagate the correction through the spanning tree
+    /**更新MapPoint和关键帧
+     * 在BA的时候LocalMapping是工作的,这就意味着在Global BA之间会有新的关键帧插入进来,
+     * 但是这些新加入的帧和更新的Map是不一致的,因此我们需要通过Spanning tree传导这个纠正
+     */
     {
         unique_lock<mutex> lock(mMutexGBA);
         if(idx!=mnFullBAIdx)
@@ -790,26 +803,32 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
 
             // Correct keyframes starting at map first keyframe
             list<KeyFrame*> lpKFtoCheck(mpMap->mvpKeyFrameOrigins.begin(),mpMap->mvpKeyFrameOrigins.end());
-
+            //通过SpanningTree来遍历所有关键帧,纠正没有参与到BA中的关键帧的Pose
             while(!lpKFtoCheck.empty())
             {
+                //取KeyFrame
                 KeyFrame* pKF = lpKFtoCheck.front();
                 const set<KeyFrame*> sChilds = pKF->GetChilds();
                 cv::Mat Twc = pKF->GetPoseInverse();
+                //遍历childs
                 for(set<KeyFrame*>::const_iterator sit=sChilds.begin();sit!=sChilds.end();sit++)
                 {
                     KeyFrame* pChild = *sit;
+                    //如果没有处理过
                     if(pChild->mnBAGlobalForKF!=nLoopKF)
                     {
+                        //求出pKF到pChild的变换,然后再根据BA优化后的pKF的位姿,调整pChild的位姿
                         cv::Mat Tchildc = pChild->GetPose()*Twc;
                         pChild->mTcwGBA = Tchildc*pKF->mTcwGBA;//*Tcorc*pKF->mTcwGBA;
-                        pChild->mnBAGlobalForKF=nLoopKF;
-
+                        pChild->mnBAGlobalForKF=nLoopKF;//标记为已经处理过的
                     }
+                    //将child 关键帧添加到list中继续处理
                     lpKFtoCheck.push_back(pChild);
                 }
 
+                //pKF在BA之前的Pose
                 pKF->mTcwBefGBA = pKF->GetPose();
+                //更新pKF的Pose为BA之后的Pose
                 pKF->SetPose(pKF->mTcwGBA);
                 lpKFtoCheck.pop_front();
             }
@@ -824,6 +843,7 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                 if(pMP->isBad())
                     continue;
 
+                //如果已经参与过BA优化,那么更新Pose
                 if(pMP->mnBAGlobalForKF==nLoopKF)
                 {
                     // If optimized by Global BA, just update
@@ -834,15 +854,18 @@ void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
                     // Update according to the correction of its reference keyframe
                     KeyFrame* pRefKF = pMP->GetReferenceKeyFrame();
 
+                    //如果MapPoint的参考帧pRefKF没有纠正过位姿,那么无法进行也无法纠正MapPoint的位姿.
                     if(pRefKF->mnBAGlobalForKF!=nLoopKF)
                         continue;
 
                     // Map to non-corrected camera
+                    //通过BA之前的Pose投影到camera坐标系
                     cv::Mat Rcw = pRefKF->mTcwBefGBA.rowRange(0,3).colRange(0,3);
                     cv::Mat tcw = pRefKF->mTcwBefGBA.rowRange(0,3).col(3);
                     cv::Mat Xc = Rcw*pMP->GetWorldPos()+tcw;
 
                     // Backproject using corrected camera
+                    //用BA之后的Pose反投影到世界坐标系
                     cv::Mat Twc = pRefKF->GetPoseInverse();
                     cv::Mat Rwc = Twc.rowRange(0,3).colRange(0,3);
                     cv::Mat twc = Twc.rowRange(0,3).col(3);
