@@ -476,6 +476,7 @@ ORBextractor::ORBextractor(int _nfeatures, float _scaleFactor, int _nlevels,
     */
     float nDesiredFeaturesPerScale = nfeatures*(1 - factor)/(1 - (float)pow((double)factor, (double)nlevels));
 
+    //计算每层应该提取的特征点的数目
     int sumFeatures = 0;
     for( int level = 0; level < nlevels-1; level++ )
     {
@@ -499,6 +500,7 @@ ORBextractor::ORBextractor(int _nfeatures, float _scaleFactor, int _nlevels,
     // vmin = 11
     int vmin = cvCeil(HALF_PATCH_SIZE * sqrt(2.f) / 2);
     const double hp2 = HALF_PATCH_SIZE*HALF_PATCH_SIZE;
+    //v从0变换到vmax的时候,每一行的u的最大值的umax
     for (v = 0; v <= vmax; ++v)
         umax[v] = cvRound(sqrt(hp2 - v * v));
 
@@ -594,6 +596,7 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
     vpIniNodes.resize(nIni);
 
     // set initial node params
+    //设置初始节点的参数
     for(int i=0; i<nIni; i++)
     {
         ExtractorNode ni;
@@ -608,6 +611,7 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
     }
 
     //Associate points to childs
+    //将特征点分配给各个节点
     for(size_t i=0;i<vToDistributeKeys.size();i++)
     {
         const cv::KeyPoint &kp = vToDistributeKeys[i];
@@ -616,15 +620,18 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
 
     list<ExtractorNode>::iterator lit = lNodes.begin();
 
-    ///1. delete node with node vKeys
+    ///1. delete node with no node vKeys
     ///2. mark the node with only 1 cv::KeyPoint with bNoMore = True 
+    //遍历node
     while(lit!=lNodes.end())
     {
+        //如果node的特征点为1,那么标记为没有child node
         if(lit->vKeys.size()==1)
         {
             lit->bNoMore=true;
             lit++;
         }
+        //删除没有特征点的node
         else if(lit->vKeys.empty())
             lit = lNodes.erase(lit);
         else
@@ -661,24 +668,29 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
                 lit++;
                 continue;
             }
-            else
+            else//如果可以再分
             {
                 // If more than one point, subdivide
                 ExtractorNode n1,n2,n3,n4;
                 lit->DivideNode(n1,n2,n3,n4);
 
                 // Add childs if they contain points
+                //如果有特征点
                 if(n1.vKeys.size()>0)
                 {
-                    /// push child node to lNodes's front
+                    /// push child node to lNodes's front,新的节点插入队列前面
                     lNodes.push_front(n1);                    
+                    //如果特征点的数目大于1个,意味着可以进行再次分裂
                     if(n1.vKeys.size()>1)
                     {
+                        //可以再次分裂的节点数目+1
                         nToExpand++;
+                        //保存可以再次分裂的节点的特征点的数和该节点
                         vSizeAndPointerToNode.push_back(make_pair(n1.vKeys.size(),&lNodes.front()));
-                        /// list iterator pointe to lNodes.begin() ???
+                        /// list iterator pointe to lNodes.begin() 
+                        //队列的第一个node的迭代器指针指向队列的头
                         lNodes.front().lit = lNodes.begin();
-                    }   
+                    }
                 }
                 if(n2.vKeys.size()>0)
                 {
@@ -718,14 +730,16 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
         } //while       
         // Finish if there are more nodes than required features
         // or all nodes contain just one point
+        //如果node的数目>=特征点的数目更多,或者node的数目和上一次相比没有变化,即不能再分裂,就结束分裂
         if((int)lNodes.size()>=N || (int)lNodes.size()==prevSize)
         {
             bFinish = true;
         }
-        /// if num of nodes + 3 times * to expand nodes large than features
-        /// 3 means: divide four child node - parent node = 3 node
+         /**if num of nodes + 3 times * to expand nodes large than features, 3 means: divide four child node - parent node = 3 node
+          * 如果现有的节点数目+3倍的可以分裂的节点数目>特征点的数目,3意味着:分裂一次生成四个child node,减去一个parent node,总共增加3个node*/
         else if(((int)lNodes.size()+nToExpand*3)>N)
         {
+            
             while(!bFinish)
             {
 
@@ -734,8 +748,10 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
                 vector<pair<int,ExtractorNode*> > vPrevSizeAndPointerToNode = vSizeAndPointerToNode;
                 vSizeAndPointerToNode.clear();
 
+                //按照特征点数目从少到多进行排列
                 sort(vPrevSizeAndPointerToNode.begin(),vPrevSizeAndPointerToNode.end());
                 /// continue divide nodes into smaller child nodes
+                //继续分裂
                 for(int j=vPrevSizeAndPointerToNode.size()-1;j>=0;j--)
                 {
                     ExtractorNode n1,n2,n3,n4;
@@ -779,8 +795,10 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
                         }
                     }
 
+                    //删除parent node
                     lNodes.erase(vPrevSizeAndPointerToNode[j].second->lit);
 
+                    //如果node数目大于特征点数目,退出
                     if((int)lNodes.size()>=N)
                         break;
                 }
@@ -788,9 +806,9 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
                 if((int)lNodes.size()>=N || (int)lNodes.size()==prevSize)
                     bFinish = true;
 
-            }
-        }
-    }
+            }//while
+        }//else
+    }//while
 
     // Retain the best point in each node
     vector<cv::KeyPoint> vResultKeys;
@@ -802,6 +820,7 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
         cv::KeyPoint* pKP = &vNodeKeys[0];
         float maxResponse = pKP->response;
 
+        //找到这个node里面响应值最高的特征点
         for(size_t k=1;k<vNodeKeys.size();k++)
         {
             if(vNodeKeys[k].response>maxResponse)
@@ -821,6 +840,8 @@ vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>&
 /**
  * 计算特征点八叉树
  * @param vector<vector<KeyPoint> >& allKeypoints: 金字塔每层有多少个特征点
+ * 1.这里首先将图像分成若干个cell,然后在每个cell里面提取FAST点;
+ * 2.
  */
 void ORBextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoints)
 {
@@ -835,7 +856,7 @@ void ORBextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoin
     {
         /// limit x ,y range at this level, number 3 mean 3 pixel large than image, is FAST radius
         //限制提取特征点的范围,数字3是FAST描述子的半径
-        //留出边的空间EDGE_THRESHOLD
+        //EDGE_THRESHOLD边的图像点不提取特征点
         const int minBorderX = EDGE_THRESHOLD-3;
         const int minBorderY = minBorderX;
         const int maxBorderX = mvImagePyramid[level].cols-EDGE_THRESHOLD+3;
@@ -883,6 +904,7 @@ void ORBextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoin
                 if(maxX>maxBorderX)
                     maxX = maxBorderX;
 
+                //提取FAST角点
                 vector<cv::KeyPoint> vKeysCell;
                 FAST(mvImagePyramid[level].rowRange(iniY,maxY).colRange(iniX,maxX),
                      vKeysCell,iniThFAST,true);
@@ -916,6 +938,7 @@ void ORBextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoin
         keypoints.reserve(nfeatures);
 
         /// select best keypoints
+        ///将提取的特征点分布在四叉树节点里面,然后在每个节点里面选择响应值最高的
         keypoints = DistributeOctTree(vToDistributeKeys, minBorderX, maxBorderX,
                                       minBorderY, maxBorderY,mnFeaturesPerLevel[level], level);
 
@@ -933,7 +956,7 @@ void ORBextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoin
             keypoints[i].octave=level; // feature at which level
             keypoints[i].size = scaledPatchSize; // feature patch size used for compute feature descriptor
         }
-    }
+    }//for level
 
     // compute orientations
     //计算图像的方向
