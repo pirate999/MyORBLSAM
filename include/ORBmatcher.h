@@ -38,6 +38,10 @@ class ORBmatcher
 {    
 public:
 
+    /**
+     * @param nnratio: 比例
+     * @param checkOri: 是否进行方向一致性检测
+     */
     ORBmatcher(float nnratio=0.6, bool checkOri=true);
 
     // Computes the Hamming distance between two ORB descriptors
@@ -45,6 +49,13 @@ public:
 
     // Search matches between Frame keypoints and projected MapPoints. Returns number of matches
     // Used to track the local map (Tracking)
+    /**
+     * @brief 在Frame和vpMapPoints之间进行搜索匹配,用来跟踪局部地图,
+     * 主要利用MapPoint的描述子和Frame的特征点描述子进行匹配
+     * @param F : 跟踪关键帧
+     * @param vpMapPoints: 局部地图点
+     * @param th: 阈值,决定搜索窗口大小
+     */
     int SearchByProjection(Frame &F, const std::vector<MapPoint*> &vpMapPoints, const float th=3);
 
     // Project MapPoints tracked in last frame into the current frame and search matches.
@@ -58,10 +69,16 @@ public:
 
     // Project MapPoints seen in KeyFrame into the Frame and search matches.
     // Used in relocalisation (Tracking)
+    /**
+     * @brief 将关键帧的MapPoint投影到CurrentFrame,然后寻找匹配关系
+     */
     int SearchByProjection(Frame &CurrentFrame, KeyFrame* pKF, const std::set<MapPoint*> &sAlreadyFound, const float th, const int ORBdist);
 
     // Project MapPoints using a Similarity Transformation and search matches.
     // Used in loop detection (Loop Closing)
+    /**
+     * @brief 通过相似变换Scw将vpPoints投影到pKF,通过计算描述子距离寻找匹配关系
+     */
      int SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const std::vector<MapPoint*> &vpPoints, std::vector<MapPoint*> &vpMatched, int th);
 
     // Search matches between MapPoints in a KeyFrame and ORB in a Frame.
@@ -74,9 +91,15 @@ public:
 
     // Matching for the Map Initialization (only used in the monocular case)
     /// F1: init frame, F2: current frame, vbPrevMatched:为F1的特征点的像素坐标, vnMatches12: matched keypoint result, windowsSize:search windows size
+    /**
+     * 只用于单目的地图初始化,遍历F1的特征点,为F1的每一个特征点在F2中找到一个最相近的特征点
+     */
     int SearchForInitialization(Frame &F1, Frame &F2, std::vector<cv::Point2f> &vbPrevMatched, std::vector<int> &vnMatches12, int windowSize=10);
 
     // Matching to triangulate new MapPoints. Check Epipolar Constraint.
+    /**
+     * 在pKF1和pKF2之间寻找匹配特征点,用来三角化,并用Epipolar约束,用BOW加速匹配
+     */
     int SearchForTriangulation(KeyFrame *pKF1, KeyFrame* pKF2, cv::Mat F12,
                                std::vector<pair<size_t, size_t> > &vMatchedPairs, const bool bOnlyStereo);
 
@@ -104,6 +127,9 @@ protected:
     float RadiusByViewingCos(const float &viewCos);
 
     /// find the 3 largest vector.size()' index in array histogram
+    /**
+     * 在直方图中找到三个最大值,并返回它们的索引
+     */
     void ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
 
     /// if the threshold between best match and second match, smaller the value, the better match 

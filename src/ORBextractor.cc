@@ -854,6 +854,7 @@ void ORBextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoin
     //处理每层的图像
     for (int level = 0; level < nlevels; ++level)
     {
+        //cout << "cols and rows:" << mvImagePyramid[level].cols << mvImagePyramid[level].rows << endl;
         /// limit x ,y range at this level, number 3 mean 3 pixel large than image, is FAST radius
         //限制提取特征点的范围,数字3是FAST描述子的半径
         //EDGE_THRESHOLD边的图像点不提取特征点
@@ -1186,6 +1187,7 @@ void ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPo
         _descriptors.release();
     else
     {
+        //_descriptors每一行一个特征点的描述子
         _descriptors.create(nkeypoints, 32, CV_8U);
         descriptors = _descriptors.getMat();
     }

@@ -746,6 +746,7 @@ cv::Mat Frame::UnprojectStereo(const int &i)
         const float x = (u-cx)*z*invfx;
         const float y = (v-cy)*z*invfy;
         cv::Mat x3Dc = (cv::Mat_<float>(3,1) << x, y, z);
+        //相机坐标系转到世界坐标系
         return mRwc*x3Dc+mOw;
     }
     else

@@ -222,7 +222,7 @@ private:
     cv::Mat mRcw;
     cv::Mat mtcw;
     cv::Mat mRwc;
-    /// camera center coordinates in world frame.相机中心在世界坐标系中的位置
+    /// camera center coordinates in world frame.相机光心在世界坐标系中的位置
     cv::Mat mOw; //==mtwc
 };
 

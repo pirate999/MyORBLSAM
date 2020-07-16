@@ -66,6 +66,7 @@ namespace ORB_SLAM2
 
             // The size of the window will depend on the viewing direction
             /// comfirm search radius according to view angle cos
+            //搜索特征点的窗口大小取决于视场角度
             float r = RadiusByViewingCos(pMP->mTrackViewCos);
 
             if (bFactor)
@@ -126,7 +127,7 @@ namespace ORB_SLAM2
             {
                 if (bestLevel == bestLevel2 && bestDist > mfNNratio * bestDist2)
                     continue;
-
+                //给特征点找到对应的MapPoint
                 F.mvpMapPoints[bestIdx] = pMP;
                 nmatches++;
             }
@@ -153,6 +154,9 @@ namespace ORB_SLAM2
         const float c = kp1.pt.x * F12.at<float>(0, 2) + kp1.pt.y * F12.at<float>(1, 2) + F12.at<float>(2, 2);
 
         /// compute distance from keypoint to epipolar line
+        // 计算kp2特征点到极线的距离：
+        // 极线l：ax + by + c = 0
+        // (u,v)到l的距离为： |au+bv+c| / sqrt(a^2+b^2)
         const float num = a * kp2.pt.x + b * kp2.pt.y + c;
 
         const float den = a * a + b * b;
@@ -165,9 +169,7 @@ namespace ORB_SLAM2
         return dsqr < 3.84 * pKF2->mvLevelSigma2[kp2.octave];
     }
 
-    /*
- find the correspondence between pK's MapPoint and F' KeyPoint use DBOW 
-*/
+    /**find the correspondence between pK's MapPoint and F' KeyPoint use DBOW */
     int ORBmatcher::SearchByBoW(KeyFrame *pKF, Frame &F, vector<MapPoint *> &vpMapPointMatches)
     {
         /// get KeyFrame's MapPoint
@@ -253,7 +255,7 @@ namespace ORB_SLAM2
                     /// if best matche keypoint meet TH_LOW
                     if (bestDist1 <= TH_LOW)
                     {
-                        /// if the best matched and second matched differ a lot, then remove this MapPoint
+                        /// if the best matched and second matched differ a lot, then match success
                         if (static_cast<float>(bestDist1) < mfNNratio * static_cast<float>(bestDist2))
                         {
                             vpMapPointMatches[bestIdxF] = pMP;
@@ -366,6 +368,7 @@ namespace ORB_SLAM2
                 continue;
 
             // Depth must be inside the scale invariance region of the point
+            //深度必须在点的比例不变区域内
             const float maxDistance = pMP->GetMaxDistanceInvariance();
             const float minDistance = pMP->GetMinDistanceInvariance();
             cv::Mat PO = p3Dw - Ow;
@@ -426,7 +429,6 @@ namespace ORB_SLAM2
 
         return nmatches;
     }
-
 
     int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f> &vbPrevMatched, vector<int> &vnMatches12, int windowSize)
     {
@@ -566,6 +568,10 @@ namespace ORB_SLAM2
     int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &vpMatches12)
     {
         const vector<cv::KeyPoint> &vKeysUn1 = pKF1->mvKeysUn;
+        /**
+         * DBoW2::FeatureVector的数据类型 std::map<NodeId, std::vector<unsigned int> >
+         * 储存着NodeId和特征点在Frame的索引值
+         */
         const DBoW2::FeatureVector &vFeatVec1 = pKF1->mFeatVec;
         const vector<MapPoint *> vpMapPoints1 = pKF1->GetMapPointMatches();
         const cv::Mat &Descriptors1 = pKF1->mDescriptors;
@@ -591,26 +597,32 @@ namespace ORB_SLAM2
         DBoW2::FeatureVector::const_iterator f1end = vFeatVec1.end();
         DBoW2::FeatureVector::const_iterator f2end = vFeatVec2.end();
 
+        //遍历vFeatVec1的所有节点
         while (f1it != f1end && f2it != f2end)
         {
+            //首先判断NodeId是否一样,即在同一个Node中,只有同一个Node特征点才有可能匹配
             if (f1it->first == f2it->first)
             {
+                //遍历pKF1这个Node中的所有的特征点
                 for (size_t i1 = 0, iend1 = f1it->second.size(); i1 < iend1; i1++)
                 {
+                    //取得特征点在pKF1关键帧中的索引
                     const size_t idx1 = f1it->second[i1];
-
+                    //得到对应的地图点
                     MapPoint *pMP1 = vpMapPoints1[idx1];
                     if (!pMP1)
                         continue;
                     if (pMP1->isBad())
                         continue;
 
+                    //Descriptors1中一行代表一个特征点的描述子,获取描述子
                     const cv::Mat &d1 = Descriptors1.row(idx1);
 
                     int bestDist1 = 256;
                     int bestIdx2 = -1;
                     int bestDist2 = 256;
 
+                    //遍历pKF2这个Node中的所有的特征点
                     for (size_t i2 = 0, iend2 = f2it->second.size(); i2 < iend2; i2++)
                     {
                         const size_t idx2 = f2it->second[i2];
@@ -624,7 +636,7 @@ namespace ORB_SLAM2
                             continue;
 
                         const cv::Mat &d2 = Descriptors2.row(idx2);
-
+                        //计算描述子距离
                         int dist = DescriptorDistance(d1, d2);
 
                         if (dist < bestDist1)
@@ -639,10 +651,13 @@ namespace ORB_SLAM2
                         }
                     }
 
+                    //如果小于阈值
                     if (bestDist1 < TH_LOW)
                     {
+                        //bestDist1比bestDist2小的明显
                         if (static_cast<float>(bestDist1) < mfNNratio * static_cast<float>(bestDist2))
                         {
+                            //匹配成功,pKF1中的第idx1个特征点对应的MapPoint为pKF1中的第bestIdx2的MapPoint
                             vpMatches12[idx1] = vpMapPoints2[bestIdx2];
                             vbMatched2[bestIdx2] = true;
 
@@ -665,15 +680,16 @@ namespace ORB_SLAM2
                 f1it++;
                 f2it++;
             }
+            //如果f1it->first小于f2it->first
             else if (f1it->first < f2it->first)
-            {
+            {   //在vFeatVec1中找到第一个不小于f2it->first的NodeId
                 f1it = vFeatVec1.lower_bound(f2it->first);
             }
             else
             {
                 f2it = vFeatVec2.lower_bound(f1it->first);
             }
-        }
+        }//while
 
         if (mbCheckOrientation)
         {
@@ -714,7 +730,7 @@ namespace ORB_SLAM2
         cv::Mat t2w = pKF2->GetTranslation();
         /// pKF1's camera center pose in pKF2 frame
         cv::Mat C2 = R2w * Cw + t2w;
-        /// project to pKF2' image plane get epipoles
+        /// 将pKF1的光心投影到pKF2的像素平面,得到极点(ex,ey)
         const float invz = 1.0f / C2.at<float>(2);
         const float ex = pKF2->fx * C2.at<float>(0) * invz + pKF2->cx;
         const float ey = pKF2->fy * C2.at<float>(1) * invz + pKF2->cy;
@@ -793,10 +809,9 @@ namespace ORB_SLAM2
                         /// not stereo frame
                         if (!bStereo1 && !bStereo2)
                         {
+                            //计算特征点到极点的距离的平方,该特征点距离极点太近，表明kp2对应的MapPoint距离pKF1相机太近，所以也要剔除
                             const float distex = ex - kp2.pt.x;
                             const float distey = ey - kp2.pt.y;
-                            /// 100? how this number come?
-                            /// if keypoint's distance to Epipoles
                             if (distex * distex + distey * distey < 100 * pKF2->mvScaleFactors[kp2.octave])
                                 continue;
                         }
@@ -807,9 +822,10 @@ namespace ORB_SLAM2
                             bestDist = dist;
                         }
                     }
-
+                    
                     if (bestIdx2 >= 0)
                     {
+                        //匹配成功
                         const cv::KeyPoint &kp2 = pKF2->mvKeysUn[bestIdx2];
                         vMatches12[idx1] = bestIdx2;
                         nmatches++;
@@ -1549,6 +1565,7 @@ namespace ORB_SLAM2
 
             for (int i = 0; i < HISTO_LENGTH; i++)
             {
+                //特征点最多的三个bin都不是rotHist[i]这个bin
                 if (i != ind1 && i != ind2 && i != ind3)
                 {
                     for (size_t j = 0, jend = rotHist[i].size(); j < jend; j++)
@@ -1567,11 +1584,18 @@ namespace ORB_SLAM2
     {
         int nmatches = 0;
 
+        //得到在相机坐标系下,当前帧的光心在世界坐标系原点到的坐标Ow
+        /// tcw --> twc
+        /// twc + Rwc*tcw = 0
+        /// ==> twc + Rcw.t()*tcw = 0
+        /// ==> twc = -Rcw.t()*tcw
+        /// Ow == twc
         const cv::Mat Rcw = CurrentFrame.mTcw.rowRange(0, 3).colRange(0, 3);
-        const cv::Mat tcw = CurrentFrame.mTcw.rowRange(0, 3).col(3);
-        const cv::Mat Ow = -Rcw.t() * tcw;
+        const cv::Mat tcw = CurrentFrame.mTcw.rowRange(0, 3).col(3);//在CurrentFrame坐标系下,光心相对于世界坐标系原点的坐标
+        const cv::Mat Ow = -Rcw.t() * tcw;//在世界坐标系下,光心相对于世界坐标系的坐标
 
-        // Rotation Histogram (to check rotation consistency)
+        // Rotation Histogram (to check rotation consistency)  
+        //旋转直方图,用来检测旋转一致性
         vector<int> rotHist[HISTO_LENGTH];
         for (int i = 0; i < HISTO_LENGTH; i++)
             rotHist[i].reserve(500);
@@ -1588,6 +1612,7 @@ namespace ORB_SLAM2
                 if (!pMP->isBad() && !sAlreadyFound.count(pMP))
                 {
                     //Project
+                    //将3D MapPoint投影到camera坐标系
                     cv::Mat x3Dw = pMP->GetWorldPos();
                     cv::Mat x3Dc = Rcw * x3Dw + tcw;
 
@@ -1604,6 +1629,7 @@ namespace ORB_SLAM2
                         continue;
 
                     // Compute predicted scale level
+                    //在世界坐标系下,计算光心到3D MapPoint的向量
                     cv::Mat PO = x3Dw - Ow;
                     float dist3D = cv::norm(PO);
 
@@ -1611,6 +1637,7 @@ namespace ORB_SLAM2
                     const float minDistance = pMP->GetMinDistanceInvariance();
 
                     // Depth must be inside the scale pyramid of the image
+                    //Depth必须在图像金字塔的缩放范围内
                     if (dist3D < minDistance || dist3D > maxDistance)
                         continue;
 
@@ -1723,11 +1750,13 @@ namespace ORB_SLAM2
             }
         }
 
+        //如果第二大的值远远小于第一大的值,则将索引ind2和ind3设置为-1
         if (max2 < 0.1f * (float)max1)
         {
             ind2 = -1;
             ind3 = -1;
         }
+        //如果第三大的值远远小于第一大的值,则将索引ind3设置为-1
         else if (max3 < 0.1f * (float)max1)
         {
             ind3 = -1;
@@ -1736,6 +1765,12 @@ namespace ORB_SLAM2
 
     // Bit set count operation from
     // http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+    /**
+     * 计算两个描述子之间的汉明距离,即不同位的个数
+     * 描述子为256位,这里用了位运算的一些技巧
+     * 0x55555555->0101 0101 0101 0101
+     * 0x33333333->0011 0011 0011 0011
+     */
     int ORBmatcher::DescriptorDistance(const cv::Mat &a, const cv::Mat &b)
     {
         const int *pa = a.ptr<int32_t>();

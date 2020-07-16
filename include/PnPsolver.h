@@ -58,12 +58,30 @@
 namespace ORB_SLAM2
 {
 
+/**
+ * @brief PnP解析器,根据n对像素点和3DMapPoint点的匹配点求解帧的Pose
+ * ref <<EPnP: An Accurate O(n) Solution to the PnP Problem>>
+ */
 class PnPsolver {
  public:
+
+  /**
+   * @param F:关键帧
+   * @param vpMapPointMatches : 匹配地图点
+   */
   PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches);
 
   ~PnPsolver();
 
+  /**
+   * @brief 设置Rasanc参数
+   * @param probability: 
+   * @param minInliers:
+   * @param maxIterations:最大迭代次数
+   * @param minSet:
+   * @param epsilon: 
+   * @param th2:离群的阈值
+   */
   void SetRansacParameters(double probability = 0.99, int minInliers = 8 , int maxIterations = 300, int minSet = 4, float epsilon = 0.4,
                            float th2 = 5.991);
 
@@ -77,6 +95,7 @@ class PnPsolver {
   bool Refine();
 
   // Functions from the original EPnP code
+  //从EPnPcopy过来的代码
   void set_maximum_number_of_correspondences(const int n);
   void reset_correspondences(void);
   void add_correspondence(const double X, const double Y, const double Z,

@@ -65,13 +65,17 @@ MapPoint::MapPoint(const cv::Mat &Pos, Map* pMap, Frame* pFrame, const int &idxF
     /// mnScaleLevels number 
     const int nLevels = pFrame->mnScaleLevels;
 
-    /// low level : 0 
-    /// top level : nLevels - 1
-    /// 深度范围：地图点到参考帧（只有一帧）相机中心距离，乘上参考帧中描述子获取时金字塔放大尺度，
-    /// 得到最大距离mfMaxDistance；最大距离除以整个金字塔最高层的放大尺度得到最小距离mfMinDistance。
-    /// 通常来说，距离较近的地图点，将在金字塔层数较高的地方提取出，距离较远的地图点，
-    /// 在金字塔层数较低的地方提取出（金字塔层数越低，分辨率越高，才能识别出远点）。
-    /// 因此通过地图点的信息（主要是对应描述子），我们可以获得该地图点对应的金字塔层级
+    /**
+     * 特征点的尺寸不变依赖的是多层金字塔来实现的,金字塔图像的缩放等效于相机远离或者靠近特征点,
+     * 在一定的有效距离内,特征点一般只能在多层金字塔的一层上面能够检测到,想要在其它层检测到这个
+     * 特征点就需要让相机靠近或者远离特征点.
+     * 这里用到的一个主要的原理就是:图像缩小n倍,等效于相机距离特征点的距离放大n倍;
+     * 图像放大n倍,等效于相机距离特征点的距离缩小n倍;.回到代码里面,特征点是在金字塔的level
+     * 提取的,图像相对于原图像的缩小的比例是levelScaleFactor,然后根据缩小图像等效于相机远离
+     * 特征点的原理,如果要在原图像检测到该特征点,那么相机距离特征点的距离就应该放大levelScaleFactor,即dist*levelScaleFactor;
+     * 当图像缩小到金字塔最高一层的时候 (此时缩放因子为pFrame->mvScaleFactors[nLevels-1]),要想检测到
+     * 该特征点,根据缩小相机到特征点等效于放大图像的原理,相机距离特征点的距离应该等效缩小pFrame->mvScaleFactors[nLevels-1]倍
+     */
     mfMaxDistance = dist*levelScaleFactor;
     mfMinDistance = mfMaxDistance/pFrame->mvScaleFactors[nLevels-1];
 

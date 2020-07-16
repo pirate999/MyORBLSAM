@@ -75,6 +75,7 @@ PnPsolver::PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches)
     mvKeyPointIndices.reserve(F.mvpMapPoints.size());
     mvAllIndices.reserve(F.mvpMapPoints.size());
 
+    //填充mvP2D,mvP3Dw,mvKeyPointIndices,mvAllIndices等
     int idx=0;
     for(size_t i=0, iend=vpMapPointMatches.size(); i<iend; i++)
     {
@@ -126,11 +127,13 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
     mRansacEpsilon = epsilon;
     mRansacMinSet = minSet;
 
+    //匹配特征点数目
     N = mvP2D.size(); // number of correspondences
 
     mvbInliersi.resize(N);
 
     // Adjust Parameters according to number of correspondences
+    //根据特征点数目调整参数
     int nMinInliers = N*mRansacEpsilon;
     if(nMinInliers<mRansacMinInliers)
         nMinInliers=mRansacMinInliers;
@@ -142,6 +145,7 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
         mRansacEpsilon=(float)mRansacMinInliers/N;
 
     // Set RANSAC iterations according to probability, epsilon, and max iterations
+    //根据probability, epsilon, and max iterations调整RANSAC迭代次数
     int nIterations;
 
     if(mRansacMinInliers==N)
@@ -188,22 +192,29 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         vAvailableIndices = mvAllIndices;
 
         // Get min set of points
+        //选出mRansacMinSet对匹配对
         for(short i = 0; i < mRansacMinSet; ++i)
         {
+            //生成随机数
             int randi = DUtils::Random::RandomInt(0, vAvailableIndices.size()-1);
 
+            //得到随机的匹配索引
             int idx = vAvailableIndices[randi];
 
+            //添加2D-3D匹配对
             add_correspondence(mvP3Dw[idx].x,mvP3Dw[idx].y,mvP3Dw[idx].z,mvP2D[idx].x,mvP2D[idx].y);
 
+            //移除已经选出的2D-3D匹配对
             vAvailableIndices[randi] = vAvailableIndices.back();
             vAvailableIndices.pop_back();
         }
 
         // Compute camera pose
+        //计算相机Pose
         compute_pose(mRi, mti);
 
         // Check inliers
+        //检测inliers
         CheckInliers();
 
         if(mnInliersi>=mRansacMinInliers)
@@ -236,7 +247,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
             }
 
         }
-    }
+    }//while
 
     if(mnIterations>=mRansacMaxIts)
     {
