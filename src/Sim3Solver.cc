@@ -72,6 +72,7 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
             if(pMP1->isBad() || pMP2->isBad())
                 continue;
 
+            //获取该MapPoint的对应的特征点在关键帧的索引
             int indexKF1 = pMP1->GetIndexInKeyFrame(pKF1);
             int indexKF2 = pMP2->GetIndexInKeyFrame(pKF2);
 
@@ -91,6 +92,7 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
             mvpMapPoints2.push_back(pMP2);
             mvnIndices1.push_back(i1);
 
+            //获取world坐标系转换到相机坐标系
             cv::Mat X3D1w = pMP1->GetWorldPos();
             mvX3Dc1.push_back(Rcw1*X3D1w+tcw1);
 
@@ -151,6 +153,12 @@ cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInli
 
     vector<size_t> vAvailableIndices;
 
+    /**
+     * 三个点
+     * x0 x1 x2 
+     * y0 y1 y2
+     * z0 z1 z2
+     */
     cv::Mat P3Dc1i(3,3,CV_32F);
     cv::Mat P3Dc2i(3,3,CV_32F);
 
@@ -163,6 +171,7 @@ cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInli
         vAvailableIndices = mvAllIndices;
 
         // Get min set of points
+        //每次利用三个点
         for(short i = 0; i < 3; ++i)
         {
             int randi = DUtils::Random::RandomInt(0, vAvailableIndices.size()-1);
@@ -212,14 +221,34 @@ cv::Mat Sim3Solver::find(vector<bool> &vbInliers12, int &nInliers)
     return iterate(mRansacMaxIts,bFlag,vbInliers12,nInliers);
 }
 
+//计算质心
 void Sim3Solver::ComputeCentroid(cv::Mat &P, cv::Mat &Pr, cv::Mat &C)
 {
+    /**
+     * void cv::reduce 	( 	InputArray  	src,
+		OutputArray  	dst,
+		int  	dim,
+		int  	rtype,
+		int  	dtype = -1 
+	) 	
+    Reduces a matrix to a vector. 
+     * Parameters
+     * src	input 2D matrix.
+     * dst	output vector. Its size and type is defined by dim and dtype parameters.
+     * dim	dimension index along which the matrix is reduced. 0 means that the matrix is reduced to a single row. 1 means that the matrix is reduced to a single column.
+     * rtype	reduction operation that could be one of ReduceTypes
+     * dtype	when negative, the output vector will have the same type as the input matrix, otherwise, its type will be CV_MAKE_TYPE(CV_MAT_DEPTH(dtype), src.channels()). 
+     * 
+     * ref:https://docs.opencv.org/master/d2/de8/group__core__array.html#ga4b78072a303f29d9031d56e5638da78e
+     * */
+    //将MAT转换成vector,对P矩阵的每一行求和,变成一列
     cv::reduce(P,C,1,CV_REDUCE_SUM);
+    //求平均值
     C = C/P.cols;
 
     for(int i=0; i<P.cols; i++)
     {
-        Pr.col(i)=P.col(i)-C;
+        Pr.col(i)=P.col(i)-C;//减去质心
     }
 }
 
@@ -336,15 +365,19 @@ void Sim3Solver::ComputeSim3(cv::Mat &P1, cv::Mat &P2)
     tinv.copyTo(mT21i.rowRange(0,3).col(3));
 }
 
-
+//统计哪些点是inlier的
 void Sim3Solver::CheckInliers()
 {
+    //将3D点投影到图像平面
     vector<cv::Mat> vP1im2, vP2im1;
+    //pKF2相机坐标系的点投影到pKF1图像平面
     Project(mvX3Dc2,vP2im1,mT12i,mK1);
+    //pKF1相机坐标系的点投影到pKF2图像平面
     Project(mvX3Dc1,vP1im2,mT21i,mK2);
 
     mnInliersi=0;
 
+    //遍历特征点,计算重投影误差
     for(size_t i=0; i<mvP1im1.size(); i++)
     {
         cv::Mat dist1 = mvP1im1[i]-vP2im1[i];
@@ -379,6 +412,7 @@ float Sim3Solver::GetEstimatedScale()
     return mBestScale;
 }
 
+/**将vP3Dc中的3D点从世界坐标系转换到图像坐标系并存入vP2D*/
 void Sim3Solver::Project(const vector<cv::Mat> &vP3Dw, vector<cv::Mat> &vP2D, cv::Mat Tcw, cv::Mat K)
 {
     cv::Mat Rcw = Tcw.rowRange(0,3).colRange(0,3);
@@ -402,6 +436,7 @@ void Sim3Solver::Project(const vector<cv::Mat> &vP3Dw, vector<cv::Mat> &vP2D, cv
     }
 }
 
+/**将vP3Dc中的3D点从相机坐标系转换到图像坐标系并存入vP2D*/
 void Sim3Solver::FromCameraToImage(const vector<cv::Mat> &vP3Dc, vector<cv::Mat> &vP2D, cv::Mat K)
 {
     const float &fx = K.at<float>(0,0);

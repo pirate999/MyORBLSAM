@@ -32,10 +32,18 @@
 namespace ORB_SLAM2
 {
 
+//ref Horn 1987, Closed-form solution of absolute orientation using unit quaternions
 class Sim3Solver
 {
 public:
 
+    /**
+     * @param pKF1 : 关键帧1
+     * @param pKF2 : 关键帧2
+     * @param vpMatched12 : vector的索引是pKF1中特征点的索引,vector的值是与该索引对应特征点匹配的pKF2中的地图点的指针
+     * @param bFixScale : 如果是单目,则为false,如果不是单目就是true
+     * 
+     */
     Sim3Solver(KeyFrame* pKF1, KeyFrame* pKF2, const std::vector<MapPoint*> &vpMatched12, const bool bFixScale = true);
 
     void SetRansacParameters(double probability = 0.99, int minInliers = 6 , int maxIterations = 300);
